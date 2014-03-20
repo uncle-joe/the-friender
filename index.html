@@ -1,1 +1,509 @@
-Hello
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<title>The Friender</title>
+	<link href="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+	<script src="https://code.jquery.com/jquery-1.11.0.min.js"></script>
+	<script src="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+	<style type="text/css">
+		.hidden {
+			display: none;
+		}
+		.panel-body img {
+			width: 50px;
+			height: 50px;
+		}
+		ul {
+			margin: 5px;
+			list-style-type: none;
+		}
+		li {
+			margin: 3px;
+		}
+		.user-name {
+			margin: 5px;
+		}
+	</style>
+</head>
+
+<body>
+	<div id="fb-root"></div>
+	<script type="text/javascript">
+		
+		// https://dl.dropboxusercontent.com/u/1820118/web-sites/friender/index.html
+		 // FB shit
+		window.fbAsyncInit = function() {
+			FB.init({
+				appId: '1476773909210735',
+				status: true, // check login status
+				cookie: true, // enable cookies to allow the server to access the session
+				xfbml: true // parse XFBML
+			});
+
+			FB.Event.subscribe('auth.authResponseChange', function(response) {
+				if (response.status === 'connected') {
+					//var token = response.authResponce.accessToken;
+					sayHello();
+				} else if (response.status === 'not_authorized') {
+					FB.login();
+				} else {
+					FB.login();
+				}
+			});
+		};
+
+		 // Load the SDK asynchronously
+		(function(d) {
+			var js, id = 'facebook-jssdk',
+				ref = d.getElementsByTagName('script')[0];
+			if (d.getElementById(id)) {
+				return;
+			}
+			js = d.createElement('script');
+			js.id = id;
+			js.async = true;
+			js.src = "//connect.facebook.net/en_US/all.js";
+			ref.parentNode.insertBefore(js, ref);
+		}(document));
+
+		function initDb() {
+
+			window.db = openDatabase('the_new_friender_db', '1.0', 'The Friender Database', 4 * 1024 * 1024);
+
+			db.transaction(function(tx) {
+				tx.executeSql('CREATE TABLE IF NOT EXISTS users (id TEXT, name TEXT, ava TXT)');
+				tx.executeSql('CREATE TABLE IF NOT EXISTS former_apostates (id TEXT, name TEXT, ava TXT)');
+				tx.executeSql('CREATE TABLE IF NOT EXISTS migration_version (current_version INT)');
+			});
+		}
+
+		function sayHello() {
+			initDb();
+			FB.api('/me', function(response) {
+				$('.welcome').text('Wellcome, ' + response.name);
+				$('.well').removeClass('hidden');
+			});
+		}
+
+		 // onFound (id, name, ava)
+		 // onNotFound (id)
+
+		function getUserFromDb(id, onFound, onNotFound) {
+			db.transaction(function(tx) {
+				tx.executeSql('SELECT id, name, ava FROM users WHERE id = ' + id, [], function(tx, results) {
+					if (results.rows.length >= 1) {
+						if (onFound !== undefined) {
+							onFound(id, results.rows.item(0)['name'], results.rows.item(0)['ava']);
+						}
+					} else {
+						if (onNotFound !== undefined) {
+							onNotFound(id)
+						}
+					}
+				});
+			});
+		}
+
+		window.currentFriends = [];
+
+		var queued = 0;
+
+		function getFriends() {
+			window.friendListDiv = $('.friend-list');
+			window.friendCount = 0;
+			friendListDiv.empty();
+			queued = 0;
+			FB.api('/me/friends?limit=100', function(response) {
+				window.currentFriends = [];
+				handleFriends(response)
+			})
+		};
+
+		function onEnumerationEnd() {
+			dumpIfFirstRun(function() {
+				analizeFriends();
+			});
+		}
+
+		function handleFriends(response) {
+			console.log('Got from FB: ' + response.data.length);
+
+			if (response.data) {
+
+				window.friendList = [];
+				friendCount += response.data.length;
+
+				$.each(response.data, function(index, friend) {
+
+					queued++;
+					console.log(queued);
+
+					new FbGetUserProfilePic(null, friend.id, friend.name,
+						function(id, name, ava, customData) {
+							//console.log('got: ' + id);
+							currentFriends.push({
+								id: id,
+								name: name,
+								ava: ava
+							});
+
+							queued--;
+
+							if (queued <= 0) {
+								onEnumerationEnd();
+							}
+
+							console.log(queued);
+						},
+						function(id, error, responce) {
+							currentFriends.push({
+								id: id,
+								name: null,
+								ava: null
+							});
+							queued--;
+							console.log(queued);
+							console.log('Error fetching info for user ' + id + " error: " + error);
+							if (queued <= 0) {
+								onEnumerationEnd();
+							}
+						});
+				});
+
+			} else {
+				console.log('Err resp: ' + response);
+			}
+			if (response.paging !== undefined && response.paging.next) {
+				$.getJSON(response.paging.next, function(response) {
+					handleFriends(response);
+				});
+			} else {
+
+			}
+			$('span.friend-count').text('Friend count: ' + friendCount);
+		}
+
+		function analizeFriends() {
+			var storedFriends = [];
+			db.transaction(function(tx) {
+				tx.executeSql('SELECT id, name, ava FROM users', [], function(tx, results) {
+					for (var i = 0; i < results.rows.length; i++) {
+						var id = results.rows.item(i)['id'];
+						var name = results.rows.item(i)['name'];
+						var ava = results.rows.item(i)['ava'];
+						storedFriends.push({
+							id: id,
+							name: name,
+							ava: ava
+						});
+					}
+					// test
+					//currentFriends.splice(0, 2); // two unfriends
+					//currentFriends.push({ id: '4', name: '', ava: '' });
+					//storedFriends.push({ id: '5', name: '', ava: '' });
+
+					console.log('Stored friend count: ' + storedFriends.length);
+					console.log("Current friend count: " + currentFriends.length);
+
+
+					window.newOnes = getNotInList(currentFriends, storedFriends); // what exists in current and did not exist in stored
+					window.unfrendedOnes = getNotInList(storedFriends, currentFriends); // vise versa
+
+					showUserInfo('unfrended-div', unfrendedOnes);
+					showUserInfo('new-friends-div', newOnes);
+
+					$(".buttons-wrapper").removeClass("hidden");
+				});
+			});
+		}
+
+
+		 // returns elements that is present in arr1 and not present in arr2
+
+		function getNotInList(arr1, arr2) {
+			var ret = [];
+			var found;
+			for (var i = 0; i < arr1.length; i++) {
+				var item1 = arr1[i];
+				found = false;
+				for (var n = 0; n < arr2.length; n++) {
+					var item2 = arr2[n];
+					if (item1.id == item2.id) {
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					ret.push(item1);
+				}
+			}
+			return ret;
+		}
+
+		function showUserInfo(divClass, ids) {
+			var parentPanel = $("." + divClass);
+			$("." + divClass + " .panel-body ul").empty();
+
+			for (var i = 0; i < ids.length; i++) {
+				new FbGetUserInfo(divClass, ids[i].id,
+					function(id, name, ava, _class, blocked) {
+
+						var loserName = name;
+						if (blocked) {
+							loserName += ' * has blocked you *';
+						}
+
+						var imgPlaceHolder = "<img id='user-img-" + id + "' width='50px' height='50px' />";
+						var link = "<a target='_blank' href='http://facebook.com/" + id + "'>" + imgPlaceHolder + "<span class='user-name'>" + loserName + "</span></a>";
+						$("." + _class + " .panel-body ul").append("<li id='usr-wrapper-" + id + "'><span>" + link + "</span></li>");
+						$("img#user-img-" + id).attr("src", ava);
+					},
+					function(id, error, responce) {
+						alert(error + " " + id + " " + responce);
+					});
+			}
+			parentPanel.removeClass('hidden');
+		}
+
+		 // onSuccess = function (id, name, ava, customData)
+		 // onError = function (id, error, responce)
+
+		function FbGetUserInfo(customData, id, onSuccess, onError) {
+			var This = this;
+			this.action = function() {
+				FB.api('/' + This.id, function(responce) {
+					if (responce !== undefined) {
+						//responce.name = undefined; // test blocker
+						if (responce.name === undefined) {
+							console.log('User ' + This.id + ' has blocked you, try to fetch user info from db');
+							getUserFromDb(This.id,
+								function(id, name, ava) {
+									console.log("Fetched from DB: " + id);
+									This.onSuccess(id, name, ava, This.customData, true);
+								},
+								function(id) {
+									console.log("No such user in db: " + id);
+									This.onError(This.id, 'No such user in db');
+								});
+						} else {
+							new FbGetUserProfilePic(This.customData, This.id, responce.name, This.onSuccess, This.OnError);
+						}
+					} else {
+						This.onError(This.id, 'Responce is undefined', responce);
+					};
+				})
+			};
+			this.id = id;
+			this.customData = customData;
+			this.onSuccess = onSuccess;
+			this.onError = onError;
+			this.action();
+		}
+
+		function FbGetUserProfilePic(customData, id, name, onSuccess, onError) {
+			var This = this;
+			this.action = function() {
+				FB.api('/' + This.id + '/picture?width=50&height=50&redirect=false', function(responce) {
+					if (responce !== undefined && responce.data !== undefined) {
+						This.onSuccess(This.id, This.name, responce.data.url, This.customData);
+					} else {
+						This.onError(This.id, 'Responce or responce.data is undefined', responce);
+					}
+				})
+			};
+			this.id = id;
+			this.customData = customData;
+			this.onSuccess = onSuccess;
+			this.onError = onError;
+			this.name = name;
+			this.action();
+		}
+
+		function dumpIfFirstRun(onComlete) {
+			db.transaction(function(tx) {
+				tx.executeSql('SELECT Count(*) FROM users', [], function(tx, results) {
+					if (results.rows.item(0)['Count(*)'] == 0) {
+						console.log("This is the first run, zero users in database")
+						dumpAllCurrentFriends(onComlete);
+					} else {
+						if (onComlete !== undefined)
+							onComlete();
+					}
+				})
+			})
+		}
+
+		function dumpAllCurrentFriends(onComlete) {
+			db.transaction(function(tx) {
+				tx.executeSql('DELETE FROM users');
+				console.log("Dumping users: " + currentFriends.length);
+				for (var i = 0; i < currentFriends.length; i++) {
+					var id = currentFriends[i].id;
+					var name = currentFriends[i].name;
+					var ava = currentFriends[i].ava;
+					name = name.replace(/\'/g, '`');
+					name = name.replace(/\"/g, '`');
+					var sql = "INSERT INTO users (id, name, ava) VALUES ('" + id + "','" + name + "','" + ava + "')";
+					console.log("Dumping: ('" + id + "','" + name + "','" + ava + "')")
+					tx.executeSql(sql);
+				}
+				if (onComlete !== undefined)
+					onComlete();
+			});
+		}
+
+		function dumpHistory() {
+			db.transaction(function(tx) {
+				console.log("Dumping apostates: " + unfrendedOnes.length);
+				for (var i = 0; i < unfrendedOnes.length; i++) {
+					var id = unfrendedOnes[i].id;
+					var name = unfrendedOnes[i].name;
+					var ava = unfrendedOnes[i].ava;
+					name = name.replace(/\'/g, '`');
+					name = name.replace(/\"/g, '`');
+					var sql = "INSERT INTO former_apostetes (id, name, ava) VALUES ('" + id + "','" + name + "','" + ava + "')";
+					console.log(sql);
+					tx.executeSql(sql);
+				};
+			});
+		}
+
+
+		function dumpAll() {
+			dumpAllCurrentFriends();
+			dumpHistory();
+		}
+
+
+		function dumpAllFormers() {
+			db.transaction(function(tx) {
+				for (var i = 0; i < unfrendedOnes.length; i++) {
+					var id = unfrendedOnes[i];
+					var sql = "INSERT INTO former_apostates (id) VALUES (" + id + ")";
+					tx.executeSql(sql);
+				}
+			});
+		}
+
+		function getParameterByName(name) {
+			name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
+			var regex = new RegExp("[\\?&]" + name + "=([^&#]*)"),
+				results = regex.exec(location.search);
+			return results == null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+		}
+
+		/*
+		function getFormers(onComplete) {
+			db.transaction(function(tx) {
+					tx.executeSql('SELECT id, name, ava FROM former_apostates', [], function(tx, results) {
+						var ret = [];
+						for (var i = 0; i < results.rows.length; i++) {
+							ret.push({
+								id: results.rows.item(i)['id'],
+								name: results.rows.item(i)['name'],
+								ava: results.rows.item(i)['ava']
+							});
+						}
+						onComplete(ret)
+			})})
+*/
+
+		function isThereAStorage() {
+			return 'localStorage' in window && window['localStorage'] !== null;
+		}
+
+		 ////// Migration stuff
+		/*
+        function migrateDb() {
+
+            console.log('
+						Starting migration...
+						')
+
+            db2.transaction(function (tx) {
+                tx.executeSql('
+						INSERT INTO migration_version(current_version) VALUES(2)
+						');
+            });
+
+            db.transaction(function (tx) {
+                tx.executeSql('
+						SELECT id FROM users ', [], function (tx, results) {
+                    for (var i = 0; i < results.rows.length; i++) {
+                        var id = results.rows.item(i)['
+						id '];
+
+                        FbGetUserInfo(null, id,
+                            function (id, name, ava, customData) {
+                                // put them to the new db
+                                db2.transaction(function (tx) {
+                                    name = name.replace(/\'/g, '`
+						');
+                                    name = name.replace(/\"/g, '`
+						');
+                                    var sql = "INSERT INTO users (id, name, ava) VALUES ('
+						" + id + "
+						','
+						" + name + "
+						','
+						" + ava + "
+						')";
+                                    tx.executeSql(sql);
+                                    console.log(sql);
+                                });
+                            },
+                            function (id, error, responce) {
+                                console.log('
+						Migration error, id = ' + id)
+                            });
+                    }
+                })
+            });
+        };
+        */
+	</script>
+
+	<div class="container" style="padding:10px;">
+
+		<div class="fb-login-button" data-max-rows="1" data-size="medium" data-show-faces="false" data-auto-logout-link="true"></div>
+		<div class='well hidden' style="padding:10px;">
+			<div class="jumbotron" style="padding:10px;">
+
+				<h3 class='welcome'></h3>
+				<!-- <a class='btn btn-default' onclick="migrateDb()" href="#">M I G R A T E</a> -->
+				<a class='btn btn-default' onclick="getFriends()" href="#">Inspect</a>
+
+				<div style="margin: 10px;">
+					<span class='friend-count'></span>
+				</div>
+
+				<div class="panel panel-default unfrended-div hidden">
+					<div class="panel-heading">Apostates</div>
+					<div class="panel-body">
+						<ul></ul>
+					</div>
+				</div>
+
+				<div class="panel panel-default new-friends-div hidden">
+					<div class="panel-heading">Newcomers</div>
+					<div class="panel-body">
+						<ul></ul>
+					</div>
+				</div>
+
+				<!--
+				<div class='buttons-wrapper hidden'>
+					<a class='btn btn-default' onclick="dumpAll()" href="#">To history</a>
+				</div>
+				-->
+
+				<div class='friend-list'>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+
+</html>
