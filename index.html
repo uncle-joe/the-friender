@@ -364,7 +364,7 @@
 					var ava = unfrendedOnes[i].ava;
 					name = name.replace(/\'/g, '`');
 					name = name.replace(/\"/g, '`');
-					var sql = "INSERT INTO former_apostetes (id, name, ava) VALUES ('" + id + "','" + name + "','" + ava + "')";
+					var sql = "INSERT INTO former_apostates (id, name, ava) VALUES ('" + id + "','" + name + "','" + ava + "')";
 					console.log(sql);
 					tx.executeSql(sql);
 				};
@@ -494,11 +494,11 @@
 					</div>
 				</div>
 
-				<!--
+
 				<div class='buttons-wrapper hidden'>
 					<a class='btn btn-default' onclick="dumpAll()" href="#">To history</a>
 				</div>
-				-->
+				
 
 				<div class='friend-list'>
 				</div>
