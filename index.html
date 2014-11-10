@@ -116,7 +116,7 @@
 			window.friendCount = 0;
 			friendListDiv.empty();
 			queued = 0;
-			FB.api('/me/friends?limit=100', function(response) {
+			FB.api('/me/friends?limit=1000', function(response) {
 				window.currentFriends = [];
 				handleFriends(response)
 			})
