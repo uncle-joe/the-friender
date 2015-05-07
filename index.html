@@ -116,7 +116,7 @@
 			window.friendCount = 0;
 			friendListDiv.empty();
 			queued = 0;
-			FB.api('/me/taggable-friends?limit=5000', function(response) {
+			FB.api('/me/taggable_friends?limit=5000', function(response) {
 				window.currentFriends = [];
 				handleFriends(response)
 			})
